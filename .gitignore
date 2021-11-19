@@ -1,0 +1,5 @@
+*.ini
+.venv/
+*.pem
+*.ppk
+label/output/*.zpl

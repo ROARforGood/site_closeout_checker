@@ -1,0 +1,35 @@
+2021-11-17 17:00:09,855 - gateway-programmer - CRITICAL - Uncaught exception:
+Traceback (most recent call last):
+  File "C:\Users\Rich\Documents\GitHub\roar\site_closeout_checker\modules\purple_postgres_db.py", line 26, in db_connection
+    self.conn = psycopg2.connect(host = db_credentials['host'],
+  File "C:\Users\Rich\Documents\GitHub\roar\gateway-programmer-freertos\.venv\lib\site-packages\psycopg2\__init__.py", line 122, in connect
+    conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+psycopg2.OperationalError: could not connect to server: Connection refused (0x0000274D/10061)
+	Is the server running on host "localhost" (::1) and accepting
+	TCP/IP connections on port 5555?
+could not connect to server: Connection refused (0x0000274D/10061)
+	Is the server running on host "localhost" (127.0.0.1) and accepting
+	TCP/IP connections on port 5555?
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Rich\Documents\GitHub\roar\site_closeout_checker\site_closeout_checker.py", line 75, in <module>
+    main()
+  File "C:\Users\Rich\Documents\GitHub\roar\site_closeout_checker\site_closeout_checker.py", line 42, in main
+    PurpleDb = PurplePostgres(server = config['connection']['server'])
+  File "C:\Users\Rich\Documents\GitHub\roar\site_closeout_checker\modules\purple_postgres_db.py", line 15, in __init__
+    self.db_connection(db_credentials)
+  File "C:\Users\Rich\Documents\GitHub\roar\site_closeout_checker\modules\purple_postgres_db.py", line 57, in db_connection
+    raise ValueError("Database Connection Failed")
+ValueError: Database Connection Failed
+2021-11-19 15:12:33,450 - gateway-programmer - CRITICAL - Uncaught exception:
+Traceback (most recent call last):
+  File "C:\Users\Rich\Documents\GitHub\roar\site_closeout_checker\site_closeout_checker.py", line 91, in <module>
+    test_main()
+  File "C:\Users\Rich\Documents\GitHub\roar\site_closeout_checker\site_closeout_checker.py", line 47, in test_main
+    PurpleDb = PurplePostgres(server = config['connection']['server'],
+  File "C:\Users\Rich\Documents\GitHub\roar\site_closeout_checker\modules\purple_postgres_db.py", line 18, in __init__
+    self.client_id = get_client_id(site_id)
+NameError: name 'get_client_id' is not defined
