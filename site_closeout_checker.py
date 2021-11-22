@@ -1,72 +1,90 @@
-import subprocess
 from time import sleep
 import sys
 import os
-from pathlib import Path
-import fileinput
+from datetime import datetime
 import logging
-from configparser import ConfigParser
+import csv
+from tkinter import filedialog
+from tkinter import *
 from modules.purple_postgres_db import PurplePostgres
 
-def target_params_from_db(conn, target_id, site_id, gateway_parameters):
-    cur= conn.cursor()
-    node_public_id = target_id.split('_')[2]
-    logger.debug(f'node_public_id: {node_public_id}')
-    cur.execute("SELECT 'node.node_public_id','node.board_type','node.device_type','network.id','network.network_key','gateway.thing_arn', 'access_point.wifi' \
-                FROM node   \
-                INNER JOIN network ON network.id = node.network_id \
-                INNER JOIN gateway ON gateway.id = %s \
-                INNER JOIN access_point on gateway.access_point_id = access_point.id \
-                WHERE node.node_public_id = %s AND network.site_id = %s \
-                LIMIT 2"
-                ,(target_id, node_public_id, config['site']['id'])
-                )
-    logger.debug(f'Query: {cur.query}')
-    rows = cur.fetchall()
-    cur.close()
-    if len(rows) == 1:
-        logger.debug("Found device info by ID")
-        target_gateway_params = rows[0]
-        logger.debug(target_gateway_params)
-        return target_gateway_params  
-    elif len(rows) == 0:
-        logger.error("Device info not found")
-        return None
-    elif len(rows) > 1:
-        logger.error("Duplicate device IDs")
-        return None
 
+class SiteCheck:
+    def __init__(self):
+        self.PurpleDb = PurplePostgres(server = 'tfprod')
 
+        
+        self.beacons_with_geofeature_error = self.PurpleDb.beacons_with_mismatched_networks_and_geofetures()
+        print('\nBeacons that need to be reinstalled due to install geo_feature assignment issue:')
+        print('---------------------------------------------------------------------------------')
+        if self.beacons_with_geofeature_error:
+            for beacon in self.beacons_with_geofeature_error:
+                print(f"Building: {beacon['building_id']} Level: {beacon['level_id']} Location: {beacon['location_type']} {beacon['location_id']} {beacon['description']} Public ID: {beacon['node_public_id']} Serial Number Index: {beacon['serial_number_index']}")
+        else:
+            print("No beacons to reinstall due to this issue!")
 
+        self.beacons_to_decommission = self.PurpleDb.beacons_to_decommision_no_geofeature()
+        print('\nBeacons to decommission (not assigned to a geofeature):')
+        print('---------------------------------------------------------------------------------')
+        if self.beacons_to_decommission:
+            for beacon in self.beacons_to_decommission:
+                beacon['dashboard_url'] = f"https://prod.roaralwayson.net/clients/{self.PurpleDb.client_id}/sites/{self.PurpleDb.site_id}/networks/{beacon['network_id']}/nodes/{beacon['id']}"
+                print(f"Public ID: {beacon['node_public_id']} Serial Number Index: {beacon['serial_number_index']}")
+        else:
+            print("No beacons to decommission!")
+
+        site_networks = self.PurpleDb.site_networks()
+        print('\nNetwork Master Sizes and # Uninstalled Bays per Network:')
+        print('(note: master size only counts installed locations)')
+        print('----------------------------------------------------------')
+        self.networks = []
+        for network in site_networks:
+            network_master_size = self.PurpleDb.network_master_count(network_id=network['id'])
+            uninstalled_bays = self.PurpleDb.uninstalled_bay_count(network_id=network['id'])
+            self.networks.append({ 'network_id' : network['id'], 'master_size' : network_master_size, 'uninstalled_bays' : uninstalled_bays})
+            print(f'Network: {network["id"]} Master Size: {network_master_size} Uninstalled Bays: {uninstalled_bays}')
+
+        
+        generate_csvs = input("\nWould you like to generate CSVs to save the above info? (Y/N): ")
+        if generate_csvs in [ 'Y', 'y']:
+            self.generate_csvs()
+
+        input("\nSite Closeout Check complete, press Enter to close the window...")
+    def generate_csvs(self):
+        """Generate and save CSVs
+        """    
+        base_output_directory = filedialog.askdirectory(title = "Select Save Location")
+        
+        
+        #Key: csv filename Value: dict of data for that sheet
+        output_directory = os.path.join(base_output_directory, f'Site-Check-{self.PurpleDb.client_mqtt_id}_{self.PurpleDb.site_mqtt_id}-{self.PurpleDb.site_name}-({datetime.now().strftime("%y-%m-%d_%H%M%S")})')
+        os.mkdir(output_directory)
+
+        
+        csv_dict = {
+        "BeaconsWithGeofeatureError.csv" : self.beacons_with_geofeature_error,
+        "BeaconsToDecommission.csv" : self.beacons_to_decommission,
+        "NetworkMasterSize.csv" : self.networks
+        }
+        
+        for csv_file in csv_dict:
+            csv_path = os.path.join(output_directory, csv_file)
+            with open(csv_path, 'w', newline='') as file:
+                writer = csv.writer(file)            
+                
+                csv_headers = list(csv_dict[csv_file][0].keys())
+                writer.writerow(csv_headers)
+                
+                for index, item in enumerate(csv_dict[csv_file]):
+                    row_list = list(item[key] for key in csv_headers)
+                    writer.writerow(row_list)
+        
+    
 def main():
-    PurpleDb = PurplePostgres(server = config['connection']['server'])
+    site_check = SiteCheck()
     
-    input(f'If {PurpleDb.site_name} is the correct site hit [Enter] to contine, otherwise close the program and re-enter the site info.')
-
-def test_main():    
-    PurpleDb = PurplePostgres(server = config['connection']['server'],
-                              site_id = '1y8rAybumasW7OJL3t3JRPJOkUY')
-
-    beacons_with_geofeature_error = PurpleDb.beacons_with_mismatched_networks_and_geofetures()
-    print('\nBeacons that need to be reinstalled due to install geo_feature assignment issue:')
-    print('---------------------------------------------------------------------------------')
-    for beacon in beacons_with_geofeature_error:
-        print(f"Building: {beacon['building_id']} Level: {beacon['level_id']} Location: {beacon['location_type']} {beacon['location_id']} {beacon['description']} Public ID: {beacon['node_public_id']} Serial Number Index: {beacon['serial_number_index']}")
     
-    beacons_to_decommission = PurpleDb.beacons_to_decommision_no_geofeature()
-    print('\nBeacons to decommission (not assigned to a geofeature):')
-    print('---------------------------------------------------------------------------------')
-    for beacon in beacons_to_decommission:
-        print(f"Public ID: {beacon['node_public_id']} Serial Number Index: {beacon['serial_number_index']} URL: https://prod.roaralwayson.net/clients/{PurpleDb.client_id}/sites/{PurpleDb.site_id}/networks/{beacon['network_id']}/nodes/{beacon['id']}")
     
-
-    site_networks = PurpleDb.site_networks()
-    print('\nNetwork Master Sizes and # Uninstalled Bays per Network:')
-    print('----------------------------------------------------------')
-    for network in site_networks:
-        network_master_size = PurpleDb.network_master_count(network_id=network['id'])
-        uninstalled_bays = PurpleDb.uninstalled_bay_count(network_id=network['id'])
-        print(f'Network: {network["id"]} Master Size: {network_master_size} Uninstalled Bays: {uninstalled_bays}')
 
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
@@ -79,16 +97,13 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 if __name__ == '__main__':
     #Initiate logging settings
     from logging.config import fileConfig
-    logging.config.fileConfig('logs/logging.conf' , disable_existing_loggers=False, defaults={ 'logfilename' : 'gateway-programmer.log' } )
-    logger = logging.getLogger('gateway-programmer')
+    logging.config.fileConfig('logs/logging.conf' , disable_existing_loggers=False, defaults={ 'logfilename' : 'site_closeout_checker.log' } )
+    logger = logging.getLogger('site_closeout_checker')
     
     #Keep window open during error so the user can see the error.
     sys.excepthook = handle_exception
 
-    config = ConfigParser()
-    config.read('config.ini')
-
-    test_main()
+    main()
 
 
 

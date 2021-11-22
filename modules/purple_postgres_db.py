@@ -1,49 +1,52 @@
 import psycopg2
 import psycopg2.extras
-from configparser import ConfigParser
 
-config_db = ConfigParser()
-config_db.read('config_db.ini')
+import logging
+logger = logging.getLogger('purple_postgres_db')
 
 class PurplePostgres:
-
+    db_credentials =   {'host' : 'localhost',
+                        'port' : 5555,
+                        'database' : 'purple_accounts',
+                        'user' : 'engine',
+                        'password' : 'msZPNpMrESuYrqXT',
+                        'ssh_tunnel' : 'tfpurpleprod863a634b121dae46'}
     def __init__(self, server, site_id = False):
         
-        db_credentials = config_db[server]
-        print(db_credentials['host'])
+        logger.debug(self.db_credentials['host'])
         self.server = server
-        self.db_connection(db_credentials)
+        self.db_connection()
         if site_id:
             self.site_id = site_id
-            # self.client_id = self.get_client_id(site_id)
+            self.client_id = self.get_client_id(site_id)
         else:
             site = self.get_site_id()
             self.site_name = site['name']
             self.site_id =  site['id']
 
     
-    def db_connection(self, db_credentials):
+    def db_connection(self):
         try:
-            self.conn = psycopg2.connect(host = db_credentials['host'],
-                                        port = db_credentials['port'],
-                                        database = db_credentials['database'],
-                                        user = db_credentials['user'],
-                                        password = db_credentials['password'])
+            self.conn = psycopg2.connect(host = self.db_credentials['host'],
+                                        port = self.db_credentials['port'],
+                                        database = self.db_credentials['database'],
+                                        user = self.db_credentials['user'],
+                                        password = self.db_credentials['password'])
             
             if self.conn.status:
-                print("\nSuccessful connection to server:", self.server)
+                logger.info(f"\nSuccessful connection to server: {self.server}")
 
             # create a cursor
             cur = self.conn.cursor()
             
             cur.close()
         except (Exception, psycopg2.DatabaseError) as error:
-            print(error)
-            print("Database Connection Failed :(")
-            print("- Make sure to run SSHTunnel.bat before this program and leave it's window open")
-            print("- Make sure your're IP address is white listed (contacts the dev team for more info)")
-            print("- Confirm that the database credentials in config.ini are correct")
-            print("- Ensure you have a live internet connection")
+            logger.error(error)
+            logger.error("Database Connection Failed :(")
+            logger.error("- Make sure to run the SSH Tunnel before this program and leave it's window open")
+            logger.error("- Make sure your're IP address is white listed (contacts the dev team for more info)")
+            logger.error("- Confirm that the database credentials in config.ini are correct")
+            logger.error("- Ensure you have a live internet connection")
             input("Press Enter to Exit the Program...")
             raise ValueError("Database Connection Failed")
     
@@ -65,12 +68,12 @@ class PurplePostgres:
 
         client_dict = self.cursor_fetchall_to_dict(cur)
         if len(client_dict) < 1:
-            print("No matching client for this site")
+            logger.error("No matching client for this site")
             input("Press Enter to Exit...")
             raise ValueError("No matching client on this server")
         client_id = client_dict[0]["client_id"]
-        print(f'client id:{client_id}\n')
-
+        # print(f'client id:{client_id}\n')
+    
 
 
         cur.close()
@@ -86,33 +89,34 @@ class PurplePostgres:
         #             %(network_id, self.site_id)
         #             )
         
-        client_id = input('Enter customer Client ID: ')
+        self.client_mqtt_id = input('Enter customer Client ID: ')
         cur.execute("""SELECT name, id FROM client
                 WHERE \"mqttTopic\" = '%s'
                 """
-            %(client_id,)
+            %(self.client_mqtt_id,)
             )
         client_dict = self.cursor_fetchall_to_dict(cur)
         if len(client_dict) < 1:
-            print("No matching client on this server")
+            logger.error("No matching client on this server")
             input("Press Enter to Exit...")
             raise ValueError("No matching client on this server")
         client = client_dict[0]
-        print(f'Client found: {client["name"]} \n')
+        self.client_id = client["id"]
+        logger.info(f'Client found: {client["name"]} \n')
         
-        site_number = input('Enter Site ID: ')
+        self.site_mqtt_id = input('Enter Site ID: ')
         cur.execute("""SELECT name, id FROM site
                 WHERE \"mqttTopic\" = '%s' AND client_id = '%s'
                 """
-            %(site_number,client['id'])
+            %(self.site_mqtt_id,client['id'])
             )
         site_dict = self.cursor_fetchall_to_dict(cur)
         if len(site_dict) < 1:
-            print("No matching site for this client")
+            logger.error("No matching site for this client")
             input("Press Enter to Exit...")
             raise ValueError("No matching client on this server")
         site = site_dict[0]
-        print(f'Site found: {site["name"]}\n')
+        logger.info(f'Site found: {site["name"]}\n')
 
 
 
@@ -133,14 +137,14 @@ class PurplePostgres:
         records_dict = self.cursor_fetchall_to_dict(cur)
         cur.close()
         if len(records_dict) == 1:
-            print("Found device info by ID")
+            logger.debug("Found device info by ID")
             node_params = records_dict[0]
             return node_params
         elif len(records_dict) == 0:
-            print("Device info not found {}".format(node_id))
+            logger.error("Device info not found {}".format(node_id))
             return None
         elif len(records_dict) > 1:
-            print("Duplicate device IDs")
+            logger.error("Duplicate device IDs")
             return None
 
     def get_gateway_by_id(self, gateway_id):
@@ -158,18 +162,18 @@ class PurplePostgres:
                     LIMIT 2"""
                     %(gateway_id, node_public_id, self.site_id)
                     )
-        print(cur.query)
+        logger.debug(cur.query)
         records_dict = self.cursor_fetchall_to_dict(cur)
         cur.close()
         if len(records_dict) == 1:
-            print("Found device info by ID")
+            logger.debug("Found device info by ID")
             gateway_params = records_dict[0]
             return gateway_params
         elif len(records_dict) == 0:
-            print("Device info not found {}".format(gateway_id))
+            logger.error("Device info not found {}".format(gateway_id))
             return None
         elif len(records_dict) > 1:
-            print("Duplicate device IDs")
+            logger.error("Duplicate device IDs")
             return None
     
     def site_networks(self):
@@ -249,7 +253,7 @@ class PurplePostgres:
                         INNER JOIN geo_space ON (geo_space.site_id = geo_feature.site_id)
                         AND (geo_space.building_id = geo_feature.building_id) 
                         AND (geo_space.level_id = geo_feature.level_id) 
-                        WHERE geo_space.location_id = '%s'
+                        WHERE geo_feature.node_id IS NOT NULL AND geo_space.location_id = '%s'
                        """
                     %(network_id))
         # print(cur.query)
@@ -313,17 +317,17 @@ class PurplePostgres:
         cur.close()
 
         return records_dict
-
     def beacons_to_decommision_no_geofeature(self):
         cur= self.conn.cursor(cursor_factory = psycopg2.extras.DictCursor)
-        cur.execute("""SELECT node.id, node.node_public_id, node.serial_number_index, node.network_id, node.decommissioned FROM public.node
-                        inner join network on node.network_id = network.id
-                        where network.site_id = '%s'
-                        and node.id not in (select node_id from geo_feature where geo_feature.site_id = '%s')
-                        and node.decommissioned = false
+        cur.execute("""SELECT geo_feature.id, node.id, node.node_public_id, node.serial_number_index, node.network_id, node.decommissioned FROM public.node
+                        INNER JOIN network ON node.network_id = network.id
+                        LEFT JOIN geo_feature ON geo_feature.node_id = node.id
+                        WHERE network.site_id = '%s'
+                        AND geo_feature.id IS NULL
+                        AND node.decommissioned = false
                         ORDER BY node_public_id
                        """
-                    %(self.site_id, self.site_id)
+                    %(self.site_id)
                     )
 
         records_dict = self.cursor_fetchall_to_dict(cur)
@@ -348,12 +352,3 @@ if __name__ == '__main__':
 
     beacons_with_geofeature_error = TestDb.beacons_with_mismatched_networks_and_geofetures()
     print(beacons_with_geofeature_error)
-    # print("Uninstalled Rooms:")
-    # for network in site_networks:
-    #     uninstalled_room_list = TestDb.list_uninstalled_rooms(network_id=network['id'])
-    #     print(f'Floor: {uninstalled_room_list[0][1]} Uninstalled Rooms: {len(uninstalled_room_list)}')
-    #     for room in uninstalled_room_list:
-    #         print(f'Room: {room[2]}')
-    # print(TestDb.network_master_count(network_id="40127"))
-    # print(TestDb.site_networks())
-    # print(TestDb.site_nodes())

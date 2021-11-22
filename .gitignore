@@ -3,3 +3,7 @@
 *.pem
 *.ppk
 label/output/*.zpl
+build/
+*.pyc
+*.log
+*.spec
