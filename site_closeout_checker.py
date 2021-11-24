@@ -68,16 +68,17 @@ class SiteCheck:
         }
         
         for csv_file in csv_dict:
-            csv_path = os.path.join(output_directory, csv_file)
-            with open(csv_path, 'w', newline='') as file:
-                writer = csv.writer(file)            
-                
-                csv_headers = list(csv_dict[csv_file][0].keys())
-                writer.writerow(csv_headers)
-                
-                for index, item in enumerate(csv_dict[csv_file]):
-                    row_list = list(item[key] for key in csv_headers)
-                    writer.writerow(row_list)
+            if csv_dict[csv_file]:
+                csv_path = os.path.join(output_directory, csv_file)
+                with open(csv_path, 'w', newline='') as file:
+                    writer = csv.writer(file)            
+                    
+                    csv_headers = list(csv_dict[csv_file][0].keys())
+                    writer.writerow(csv_headers)
+                    
+                    for index, item in enumerate(csv_dict[csv_file]):
+                        row_list = list(item[key] for key in csv_headers)
+                        writer.writerow(row_list)
         
     
 def main():
