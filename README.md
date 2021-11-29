@@ -2,9 +2,9 @@
 
 ## Setup
 
-Download the latest verison from the release page.
-
-You'll need to contact Rich or a sys admin for the keys, and to whitelist your IP address in order for the program to work.
+1. Download the latest verison from the [repository release page](https://github.com/ROARforGood/site_closeout_checker/releases).
+2. Extract the files then copy the SSH keys into the keys folder. You'll need to contact Rich or a sys admin for the keys.
+3. Make sure your IP aaddress is whitelisted for access, (Contact Rish or a sys admin to whitelist your IP).
 
 ## Usage
 
