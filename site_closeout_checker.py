@@ -30,6 +30,14 @@ class SiteCheck:
             for beacon in self.beacons_to_decommission:
                 beacon['dashboard_url'] = f"https://prod.roaralwayson.net/clients/{self.PurpleDb.client_id}/sites/{self.PurpleDb.site_id}/networks/{beacon['network_id']}/nodes/{beacon['id']}"
                 print(f"Public ID: {beacon['node_public_id']} Serial Number Index: {beacon['serial_number_index']}")
+            
+            decommission_promt = input(f"\nWould you like to decommission some or all of these beacons? (Y/N) ")
+            if decommission_promt in [ 'Y', 'y']:
+                for beacon in self.beacons_to_decommission:
+                    decommission_promt = input(f"Would you like to decommission  Node Public ID: {beacon['node_public_id']} node.id: {beacon['id']}? (Y/N) ")
+                    if decommission_promt in [ 'Y', 'y']:
+                        self.PurpleDb.decommision_by_node_id(beacon['id'])
+                        logger.debug(f"Decommissioned beacon Public Id: {beacon['node_public_id']} Serial Number Index: {beacon['serial_number_index']} node.id: {beacon['id']}, from Site: {self.PurpleDb.site_name}")
         else:
             print("No beacons to decommission!")
 

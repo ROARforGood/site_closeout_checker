@@ -5,16 +5,24 @@ import logging
 logger = logging.getLogger('purple_postgres_db')
 
 class PurplePostgres:
-    db_credentials =   {'host' : 'localhost',
+##Develop
+    db_credentials =   {'tfdevelop': {'host' : 'localhost',
+                        'port' : 5555,
+                        'database' : 'purple_accounts',
+                        'user' : 'engine',
+                        'password' : 'NyWyq1tl97oVoIuW',
+                        'ssh_tunnel' : 'tfpurpletfdevelopbc96962c3b2a4818'},
+                      'tfprod' : {'host' : 'localhost',
                         'port' : 5555,
                         'database' : 'purple_accounts',
                         'user' : 'engine',
                         'password' : 'msZPNpMrESuYrqXT',
-                        'ssh_tunnel' : 'tfpurpleprod863a634b121dae46'}
+                        'ssh_tunnel' : 'tfpurpleprod863a634b121dae46'}}
     def __init__(self, server, site_id = False):
         
-        logger.debug(self.db_credentials['host'])
+        
         self.server = server
+        logger.debug(self.db_credentials[self.server]['host'])
         self.db_connection()
         if site_id:
             self.site_id = site_id
@@ -27,11 +35,11 @@ class PurplePostgres:
     
     def db_connection(self):
         try:
-            self.conn = psycopg2.connect(host = self.db_credentials['host'],
-                                        port = self.db_credentials['port'],
-                                        database = self.db_credentials['database'],
-                                        user = self.db_credentials['user'],
-                                        password = self.db_credentials['password'])
+            self.conn = psycopg2.connect(host = self.db_credentials[self.server]['host'],
+                                        port = self.db_credentials[self.server]['port'],
+                                        database = self.db_credentials[self.server]['database'],
+                                        user = self.db_credentials[self.server]['user'],
+                                        password = self.db_credentials[self.server]['password'])
             
             if self.conn.status:
                 logger.info(f"\nSuccessful connection to server: {self.server}")
@@ -323,6 +331,7 @@ class PurplePostgres:
                         INNER JOIN network ON node.network_id = network.id
                         LEFT JOIN geo_feature ON geo_feature.node_id = node.id
                         WHERE network.site_id = '%s'
+			            AND device_type = 1
                         AND geo_feature.id IS NULL
                         AND node.decommissioned = false
                         ORDER BY node_public_id
@@ -334,6 +343,24 @@ class PurplePostgres:
         cur.close()
     
         return records_dict
+
+    def decommision_by_node_id(self, node_id):
+        cur= self.conn.cursor()
+        cur.execute("""UPDATE node SET decommissioned = 'true' 
+                        WHERE node.id = '%s';
+                       """
+                    %(node_id)
+                    )
+        
+        rowcount = cur.rowcount
+        if rowcount == 1:
+            self.conn.commit()
+            logger.info(f"decommisioned node.id: {node_id}")
+        else:
+            logger.error(f"Error row count: {rowcount}, for decommissioning, it should only be 1.")
+        cur.close()
+        
+        return #results
 
 
 
