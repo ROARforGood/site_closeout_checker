@@ -1,29 +1,26 @@
 import psycopg2
 import psycopg2.extras
-
+from configparser import ConfigParser
 import logging
+
 logger = logging.getLogger('purple_postgres_db')
 
+config_db = ConfigParser()
+config_db.read('config_db.ini')
 class PurplePostgres:
 ##Develop
-    db_credentials =   {'tfdevelop': {'host' : 'localhost',
-                        'port' : 5555,
-                        'database' : 'purple_accounts',
-                        'user' : 'engine',
-                        'password' : 'NyWyq1tl97oVoIuW',
-                        'ssh_tunnel' : 'tfpurpletfdevelopbc96962c3b2a4818'},
-                      'tfprod' : {'host' : 'localhost',
-                        'port' : 5555,
-                        'database' : 'purple_accounts',
-                        'user' : 'engine',
-                        'password' : 'msZPNpMrESuYrqXT',
-                        'ssh_tunnel' : 'tfpurpleprod863a634b121dae46'}}
-    def __init__(self, server, site_id = False):
+    def __init__(self, server, site_id = False, analytics_db = False):
+        self.db_credentials = config_db[server]
+        print(self.db_credentials['host'])
         
-        
+
+
         self.server = server
-        logger.debug(self.db_credentials[self.server]['host'])
+        logger.debug(self.db_credentials['host'])
         self.db_connection()
+        if analytics_db:
+            self.db_connection_analytics()
+
         if site_id:
             self.site_id = site_id
             self.client_id = self.get_client_id(site_id)
@@ -35,11 +32,11 @@ class PurplePostgres:
     
     def db_connection(self):
         try:
-            self.conn = psycopg2.connect(host = self.db_credentials[self.server]['host'],
-                                        port = self.db_credentials[self.server]['port'],
-                                        database = self.db_credentials[self.server]['database'],
-                                        user = self.db_credentials[self.server]['user'],
-                                        password = self.db_credentials[self.server]['password'])
+            self.conn = psycopg2.connect(host = self.db_credentials['host'],
+                                        port = self.db_credentials['port'],
+                                        database = self.db_credentials['database'],
+                                        user = self.db_credentials['user'],
+                                        password = self.db_credentials['password'])
             
             if self.conn.status:
                 logger.info(f"\nSuccessful connection to server: {self.server}")
@@ -57,6 +54,32 @@ class PurplePostgres:
             logger.error("- Ensure you have a live internet connection")
             input("Press Enter to Exit the Program...")
             raise ValueError("Database Connection Failed")
+    def db_connection_analytics(self):
+        try:
+            self.conn_analytics = psycopg2.connect(host = self.db_credentials['host'],
+                                        port = self.db_credentials['port'],
+                                        database = 'purple_analytics',
+                                        user = self.db_credentials['user'],
+                                        password = self.db_credentials['password'])
+            
+            if self.conn_analytics.status:
+                logger.info(f"\nSuccessful connection to server: {self.server} analytics")
+
+            # create a cursor
+            cur = self.conn_analytics.cursor()
+            
+            cur.close()
+        except (Exception, psycopg2.DatabaseError) as error:
+            logger.error(error)
+            logger.error("Analytics Database Connection Failed :(")
+            logger.error("- Make sure to run the SSH Tunnel before this program and leave it's window open")
+            logger.error("- Make sure your're IP address is white listed (contacts the dev team for more info)")
+            logger.error("- Confirm that the database credentials in config.ini are correct")
+            logger.error("- Ensure you have a live internet connection")
+            input("Press Enter to Exit the Program...")
+            raise ValueError("Database Connection Failed")
+    
+    
     
     
     def cursor_fetchall_to_dict(self, cursor):
@@ -361,6 +384,21 @@ class PurplePostgres:
         cur.close()
         
         return #results
+
+    def get_locations_by_alert_id(self, alert_id):
+        cur= self.conn_analytics.cursor(cursor_factory = psycopg2.extras.DictCursor)
+        cur.execute("""SELECT alert_location_history.id, alert_location_history.inserted_at, alert_location_history.asset_id, geo_feature_history.building_id, geo_feature_history.level_id, geo_feature_history.location_type, geo_feature_history.location_id, geo_feature_history.description, alert_location_history.radius FROM public.alert_location_history
+                        INNER JOIN geo_feature_history on geo_feature_history.alert_location_history_id = alert_location_history.id
+                        WHERE alert_id = '%s'
+                        ORDER BY inserted_at ASC
+                       """
+                    %(alert_id))
+        # print(cur.query)
+        # confirmed_nodes_list = self.cursor_fetchall_to_dict(cur)
+        results = self.cursor_fetchall_to_dict(cur)
+        cur.close()
+        
+        return results
 
 
 
