@@ -1,62 +1,91 @@
 import psycopg2
 import psycopg2.extras
-
 import logging
+from sshtunnel import SSHTunnelForwarder
+from configparser import ConfigParser
 logger = logging.getLogger('purple_postgres_db')
 
+CONFIG_DB = ConfigParser()
+CONFIG_DB.read('config_db.ini')
+CONFIG = ConfigParser()
+CONFIG.read('config.ini')
 class PurplePostgres:
-##Develop
-    db_credentials =   {'tfdevelop': {'host' : 'localhost',
-                        'port' : 5555,
-                        'database' : 'purple_accounts',
-                        'user' : 'engine',
-                        'password' : 'NyWyq1tl97oVoIuW',
-                        'ssh_tunnel' : 'tfpurpletfdevelopbc96962c3b2a4818'},
-                      'tfprod' : {'host' : 'localhost',
-                        'port' : 5555,
-                        'database' : 'purple_accounts',
-                        'user' : 'engine',
-                        'password' : 'msZPNpMrESuYrqXT',
-                        'ssh_tunnel' : 'tfpurpleprod863a634b121dae46'}}
-    def __init__(self, server, site_id = False):
-        
-        
+    def __init__(self, server = False, site_id = False):
+        if server == False:
+            server = CONFIG['connection']['server']
+        db_credentials = CONFIG_DB[server]
+        logger.debug(f'DB Host: {db_credentials["host"]}')
         self.server = server
-        logger.debug(self.db_credentials[self.server]['host'])
-        self.db_connection()
+        self.db_connection(db_credentials)
         if site_id:
             self.site_id = site_id
-            self.client_id = self.get_client_id(site_id)
         else:
             site = self.get_site_id()
             self.site_name = site['name']
             self.site_id =  site['id']
 
+        self.site_mqtt_id = self.get_site_mqtt_id(self.site_id)
+        self.client_mqtt_id = self.get_client_mqtt_id(self.site_id)
     
-    def db_connection(self):
+    def db_connection(self, db_credentials):
+        tunnel = self.launch_sshtunnel(db_credentials)
         try:
-            self.conn = psycopg2.connect(host = self.db_credentials[self.server]['host'],
-                                        port = self.db_credentials[self.server]['port'],
-                                        database = self.db_credentials[self.server]['database'],
-                                        user = self.db_credentials[self.server]['user'],
-                                        password = self.db_credentials[self.server]['password'])
+            self.conn = psycopg2.connect(host = tunnel.local_bind_host,
+                                        port = tunnel.local_bind_port,
+                                        database = db_credentials['database'],
+                                        user = db_credentials['user'],
+                                        password = db_credentials['password'])
             
             if self.conn.status:
-                logger.info(f"\nSuccessful connection to server: {self.server}")
+                logger.info(f"Successful connection to server: {self.server}")
 
             # create a cursor
             cur = self.conn.cursor()
             
+            # # execute a statement
+            # cur.execute("SELECT site.name FROM public.site \
+            #             WHERE site.id = '%s' \
+            #             LIMIT 1"%(self.site_id))
+    
+            # # display the PostgreSQL database server version
+            # self.site_name = cur.fetchone()[0]
+            # print('Working with site:', self.site_name, '\n')
+        
+            # close the communication with the PostgreSQL
             cur.close()
         except (Exception, psycopg2.DatabaseError) as error:
-            logger.error(error)
-            logger.error("Database Connection Failed :(")
-            logger.error("- Make sure to run the SSH Tunnel before this program and leave it's window open")
-            logger.error("- Make sure your're IP address is white listed (contacts the dev team for more info)")
-            logger.error("- Confirm that the database credentials in config.ini are correct")
-            logger.error("- Ensure you have a live internet connection")
+            print(error)
+            print("Database Connection Failed :(")
+            print("- Make sue there is not another SSH tunnel already open, SSH tunnel is now integrated ino the program!")
+            print("- Make sure your're IP address is white listed (contacts the dev team for more info)")
+            print("- Confirm that the database credentials in config.ini are correct")
             input("Press Enter to Exit the Program...")
             raise ValueError("Database Connection Failed")
+    
+    
+    def launch_sshtunnel(self, db_credentials):  
+        sshtunnel_logger = logging.getLogger("paramiko.transport")
+        sshtunnel_logger.setLevel(logging.WARNING)
+            
+        try:
+            # SSH Tunnel Configuration
+            tunnel =  SSHTunnelForwarder(
+                ssh_host = 'bastion.roaralwayson.com',
+                ssh_port = 22,
+                ssh_username = 'ec2-user',
+                ssh_pkey= '.\keys\kp-tf-deployer.pem',
+                remote_bind_address=(f'{db_credentials["ssh_tunnel"]}.cbxvcrk7rtag.us-east-1.rds.amazonaws.com', 5432),
+                local_bind_address=('localhost', int(db_credentials['port']))
+            )
+            tunnel.start()
+        except (Exception) as error:
+            print(error)
+            print("Launching SSH Tunnel failed :(")
+            print("- Confirm that the database credentials in config.ini are correct")
+            print("- Ensure you have a live internet connection")
+            input("Press Enter to Exit the Program...")
+            raise ValueError("Launching SSH Tunnel Failed")
+        return tunnel
     
     
     def cursor_fetchall_to_dict(self, cursor):
@@ -64,6 +93,15 @@ class PurplePostgres:
         real_dict = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
         return real_dict
+    
+    def get_records_dict(self, query: str) -> dict:
+        cur= self.conn.cursor(cursor_factory = psycopg2.extras.DictCursor)
+        logger.debug(f"Executing query: {query}")
+        cur.execute(query)
+        records_dict = self.cursor_fetchall_to_dict(cur)
+        cur.close()
+
+        return records_dict
     
     def get_client_id(self, site_id):
         cur= self.conn.cursor(cursor_factory = psycopg2.extras.DictCursor)
@@ -130,7 +168,21 @@ class PurplePostgres:
 
         cur.close()
         
-        return site      
+        return site     
+
+    def get_site_mqtt_id(self, site_id):
+        site = self.get_records_dict(f"""SELECT \"mqttTopic\" from site 
+                    WHERE site.id = '{self.site_id}'""")
+        
+        return site[0]['mqttTopic']   
+     
+    def get_client_mqtt_id(self, site_id):
+        site = self.get_records_dict(f"""SELECT client.\"mqttTopic\" from site 
+                    JOIN client on site.client_id = client.id
+                    WHERE site.id = '{self.site_id}'""")
+        
+        return site[0]['mqttTopic']
+ 
 
     def node_params(self, node_id):
         cur= self.conn.cursor(cursor_factory = psycopg2.extras.DictCursor)
@@ -201,7 +253,7 @@ class PurplePostgres:
 
     def site_nodes(self):
         cur= self.conn.cursor(cursor_factory = psycopg2.extras.DictCursor)
-        cur.execute("""SELECT node.node_public_id, node.serial_number, network.id, node.free_out, geo_feature.location_id, geo_feature.building_id  FROM public.node
+        cur.execute("""SELECT node.id, node.node_public_id, node.serial_number, node.serial_number_index, node.network_id, network.online, node.free_out, geo_feature.location_id, geo_feature.building_id  FROM public.node
                        JOIN geo_feature ON node.id = geo_feature.node_id
                        INNER JOIN network ON network.id = node.network_id
                        WHERE network.site_id = '%s'"""
@@ -225,6 +277,14 @@ class PurplePostgres:
         cur.close()
         
         return records_dict
+
+    def get_list_of_gateway2s(self):
+        gateway2s = self.get_records_dict(f"""SELECT * from gateway 
+                            INNER JOIN network on gateway.network_id = network.id
+                            WHERE site_id = '{self.site_id}'
+                            AND SUBSTRING(SPLIT_PART(gateway.id, '_', -1) FROM 2 FOR 1) = '2'
+                            ORDER BY (gateway.id) ASC""")
+        return gateway2s
     
     def current_network_size(self, network_id):
         cur= self.conn.cursor(cursor_factory = psycopg2.extras.DictCursor)
@@ -361,6 +421,27 @@ class PurplePostgres:
         cur.close()
         
         return #results
+    
+    def update_node_public_id(self, node_id, serial_number_index, db_node_public_id, hw_node_public_id):
+        cur= self.conn.cursor()
+        query = f"""UPDATE node SET node_public_id = {hw_node_public_id}
+                    WHERE node.id = '{node_id}'
+                    AND node.serial_number_index = {serial_number_index}
+                    AND node.node_public_id = {db_node_public_id};
+                    """
+        logger.debug(query)
+        cur.execute(query)
+        
+        rowcount = cur.rowcount
+        if rowcount == 1:
+            self.conn.commit()
+            logger.info(f"Successfully updated node with serial number index:{serial_number_index} & db public id:{db_node_public_id} "
+                f"to match hw public id:{hw_node_public_id}")
+        else:
+            logger.error(f"Error updating node with serial number index:{serial_number_index} - row count: {rowcount}, when updating, it should only be 1.")
+        cur.close()
+        
+        return #results
 
 
 
@@ -371,11 +452,13 @@ if __name__ == '__main__':
                             site_id = '1y8rAybumasW7OJL3t3JRPJOkUY')
 
     site_networks = TestDb.site_networks()
-    
-    for network in site_networks:
-        network_master_size = TestDb.network_master_count(network_id=network['id'])
-        uninstalled_bays = TestDb.uninstalled_bay_count(network_id=network['id'])
-        print(f'Network: {network["id"]} Size: {network_master_size} Uninstalled Bays: {uninstalled_bays}')
+    print(site_networks)
+    site_nodes = TestDb.site_nodes()
+    print(site_nodes)
+    # for network in site_networks:
+    #     network_master_size = TestDb.network_master_count(network_id=network['id'])
+    #     uninstalled_bays = TestDb.uninstalled_bay_count(network_id=network['id'])
+    #     print(f'Network: {network["id"]} Size: {network_master_size} Uninstalled Bays: {uninstalled_bays}')
 
-    beacons_with_geofeature_error = TestDb.beacons_with_mismatched_networks_and_geofetures()
-    print(beacons_with_geofeature_error)
+    # beacons_with_geofeature_error = TestDb.beacons_with_mismatched_networks_and_geofetures()
+    # print(beacons_with_geofeature_error)

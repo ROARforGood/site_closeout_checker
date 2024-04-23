@@ -6,10 +6,10 @@
 2. Extract the files to a folder somewhere within your user directory (for example C:\Users\YourUsername\Documents\).
 3. Copy the SSH keys into the keys folder (contact Rich or a sys admin for the keys).
 4. Make sure your IP aaddress is whitelisted for access (contact Rich or a sys admin to whitelist your IP).
+5. create a config_db.ini file based on the config_db.ini.template with database credentials
+6. Create a config.ini file based on the config.ini.template, enter the filepath of your MQTT crentials and target environment
 
 ## Usage
-
-Run `SSHTunnelLauncher.exe` to launch the SSH tunnel.  If your set up properly this should run without errors, leave the window open.
 
 Run `SiteCloseoutChecker.exe` and enter the info requested by the prompts.
 
@@ -19,6 +19,5 @@ Run `SiteCloseoutChecker.exe` and enter the info requested by the prompts.
 
 To build executables run the following commands from the root directory
 ```
-pyinstaller site_closeout_checker.py --onefile --name SiteCloseoutChecker.exe --paths=modules\ --icon roar.ico
-pyinstaller modules\sshtunnel_launcher.py --onefile --name SSHTunnelLauncher.exe --paths=modules\ --icon roar.ico
+pyinstaller site_closeout_checker.py --onefile --name SiteCloseoutChecker.exe --distpath . --paths=modules\ --icon roar.ico
 ```

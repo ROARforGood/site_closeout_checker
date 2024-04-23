@@ -1,0 +1,8 @@
+[connection]
+server = tfprod
+
+[MQTT]
+HOST = 
+ROOT_CA_PATH = 
+CERTIFICATE_PATH = 
+PRIVATE_KEY_PATH = 
